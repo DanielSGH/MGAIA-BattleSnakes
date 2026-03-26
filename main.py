@@ -47,6 +47,25 @@ def get_best_moves_towards(safe_moves, head, targets):
     return best_moves if best_moves else safe_moves
 
 
+def evaluate_position(head, game_state, my_id):
+    score = 0
+    food = game_state['board']['food']
+    if food:
+        min_dist = min(manhattan_dist(head, f) for f in food)
+        score += 100 / (min_dist + 1)  # Reward closer food
+    opponents = [s for s in game_state['board']['snakes'] if s['id'] != my_id]
+    my_length = len(game_state['you']['body'])
+    for opp in opponents:
+        dist = manhattan_dist(head, opp['body'][0])
+        if my_length > len(opp['body']):
+            score += 50 / (dist + 1)  # Bonus for hunting smaller opponents
+        else:
+            score -= 50 / (dist + 1)  # Penalty for being near larger opponents
+    score += game_state['you']['health']  # Reward higher health
+    score += my_length * 10  # Reward longer length
+    return score
+
+
 # info is called when you create your Battlesnake on play.battlesnake.com
 # and controls your Battlesnake's appearance
 # TIP: If you open your Battlesnake URL in a browser you should see this data
@@ -137,6 +156,8 @@ def move(game_state: typing.Dict) -> typing.Dict:
         return {"move": "down"}
 
     # Step 4 : Choose to move towards food or to box in opponent
+    my_id = game_state['you']['id']
+    
     food = game_state['board']['food']
     if food:
         # Move towards food
@@ -144,7 +165,7 @@ def move(game_state: typing.Dict) -> typing.Dict:
         next_move = random.choice(best_moves)
     else:
         # Try to box in another snake
-        opponents = game_state['board']['snakes']
+        opponents = [s for s in game_state['board']['snakes'] if s['id'] != my_id]
         if opponents:
             opponent_heads = [snake['body'][0] for snake in opponents]
             best_moves = get_best_moves_towards(safe_moves, my_head, opponent_heads)
@@ -152,8 +173,22 @@ def move(game_state: typing.Dict) -> typing.Dict:
         else:
             next_move = random.choice(safe_moves)
 
+    # Use heuristic evaluation to choose the best safe move
+    best_score = -float('inf')
+    best_move = safe_moves[0]
+    
+    for move in safe_moves:
+        new_head = get_new_head(my_head, move)
+        score = evaluate_position(new_head, game_state, my_id)
+        if score > best_score:
+            best_score = score
+            best_move = move
+    next_move = best_move
+
     print(f"MOVE {game_state['turn']}: {next_move}")
     return {"move": next_move}
+
+
 
 
 # Start server when `python main.py` is run
