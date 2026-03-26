@@ -14,6 +14,39 @@ import random
 import typing
 
 
+def get_new_head(head, move):
+    new_head = head.copy()
+    if move == "up":
+        new_head["y"] += 1
+    elif move == "down":
+        new_head["y"] -= 1
+    elif move == "left":
+        new_head["x"] -= 1
+    elif move == "right":
+        new_head["x"] += 1
+    return new_head
+
+
+def manhattan_dist(a, b):
+    return abs(a["x"] - b["x"]) + abs(a["y"] - b["y"])
+
+
+def get_best_moves_towards(safe_moves, head, targets):
+    if not targets:
+        return safe_moves
+    best_moves = []
+    min_dist = float('inf')
+    for move in safe_moves:
+        new_head = get_new_head(head, move)
+        dist = min(manhattan_dist(new_head, t) for t in targets)
+        if dist < min_dist:
+            min_dist = dist
+            best_moves = [move]
+        elif dist == min_dist:
+            best_moves.append(move)
+    return best_moves if best_moves else safe_moves
+
+
 # info is called when you create your Battlesnake on play.battlesnake.com
 # and controls your Battlesnake's appearance
 # TIP: If you open your Battlesnake URL in a browser you should see this data
@@ -62,15 +95,36 @@ def move(game_state: typing.Dict) -> typing.Dict:
     elif my_neck["y"] > my_head["y"]:  # Neck is above head, don't move up
         is_move_safe["up"] = False
 
-    # TODO: Step 1 - Prevent your Battlesnake from moving out of bounds
-    # board_width = game_state['board']['width']
-    # board_height = game_state['board']['height']
+    # Step 1 - Prevent your Battlesnake from moving out of bounds
+    board_width = game_state['board']['width']
+    board_height = game_state['board']['height']
 
-    # TODO: Step 2 - Prevent your Battlesnake from colliding with itself
-    # my_body = game_state['you']['body']
+    for move in is_move_safe:
+        new_head = get_new_head(my_head, move)
+        if 0 > new_head["y"] >= board_height and 0 > new_head["x"] >= board_width:
+                is_move_safe[move] = False
 
-    # TODO: Step 3 - Prevent your Battlesnake from colliding with other Battlesnakes
-    # opponents = game_state['board']['snakes']
+    # Step 2 - Prevent your Battlesnake from colliding with itself
+    my_body = game_state['you']['body']
+
+    for move in is_move_safe:
+        if not is_move_safe[move]:
+            continue
+        new_head = get_new_head(my_head, move)
+        if new_head in my_body:
+            is_move_safe[move] = False
+
+    # Step 3 - Prevent your Battlesnake from colliding with other Battlesnakes
+    opponents = game_state['board']['snakes']
+
+    for move in is_move_safe:
+        if not is_move_safe[move]:
+            continue
+        new_head = get_new_head(my_head, move)
+        for snake in opponents:
+            if new_head in snake['body']:
+                is_move_safe[move] = False
+                break
 
     # Are there any safe moves left?
     safe_moves = []
@@ -82,11 +136,21 @@ def move(game_state: typing.Dict) -> typing.Dict:
         print(f"MOVE {game_state['turn']}: No safe moves detected! Moving down")
         return {"move": "down"}
 
-    # Choose a random move from the safe ones
-    next_move = random.choice(safe_moves)
-
-    # TODO: Step 4 - Move towards food instead of random, to regain health and survive longer
-    # food = game_state['board']['food']
+    # Step 4 : Choose to move towards food or to box in opponent
+    food = game_state['board']['food']
+    if food:
+        # Move towards food
+        best_moves = get_best_moves_towards(safe_moves, my_head, food)
+        next_move = random.choice(best_moves)
+    else:
+        # Try to box in another snake
+        opponents = game_state['board']['snakes']
+        if opponents:
+            opponent_heads = [snake['body'][0] for snake in opponents]
+            best_moves = get_best_moves_towards(safe_moves, my_head, opponent_heads)
+            next_move = random.choice(best_moves)
+        else:
+            next_move = random.choice(safe_moves)
 
     print(f"MOVE {game_state['turn']}: {next_move}")
     return {"move": next_move}
