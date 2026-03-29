@@ -13,6 +13,7 @@
 import random
 import typing
 from copy import deepcopy
+import time
 
 from MCTSNode import MCTSNode
 
@@ -122,6 +123,8 @@ def move(game_state: typing.Dict) -> typing.Dict:
     board_height = game_state['board']['height']
 
     for move in is_move_safe:
+        # print the value the arguments to get_new_head
+        print(f"my_head: {my_head}, move: {move}")
         new_head = get_new_head(my_head, move)
         if 0 > new_head["y"] >= board_height and 0 > new_head["x"] >= board_width:
                 is_move_safe[move] = False
@@ -192,48 +195,46 @@ def move(game_state: typing.Dict) -> typing.Dict:
     return {"move": next_move}
 
 def make_mcts_move(game_state: typing.Dict) -> str:
+    # root = MCTSNode(deepcopy(game_state), 0, None, None)
+
+    # node = root
+    
+    # while not node.is_fully_expanded():
+    #     node.expand()
+
+    # for i in range(len(node.children)):
+    #     print(f"{node.children[i].action}: {node.children[i].game_state['you']['body'][0]['x']}, {node.children[i].game_state['you']['body'][0]['y']}")
+    
+    
+
+    # print(1
+    #     f"is the node expanded? {node.is_fully_expanded()}\n"
+    #     f"is the node terminal? {node.is_terminal()}\n"
+    #     f"node's available actions: {node.available_actions}\n"
+    #     f"node's children: {len(node.children)}\n"
+    # )
+
+    # print([c.ucb1_score() for c in node.children])
+    
+    # TODO: Implement MCTS logic here to select the best move based on simulations
     root = MCTSNode(deepcopy(game_state), 0, None, None)
 
+    deadline = time.time() + 850 / 1000.0
+    
     node = root
-    
-    while not node.is_fully_expanded():
-        node.expand()
+    while time.time() < deadline:
+        node = root
 
-    for i in range(len(node.children)):
-        print(node.children[i].available_actions)
+        while not node.is_terminal() and node.is_fully_expanded():
+            node = node.best_child()
 
-    print(
-        f"is the node expanded? {node.is_fully_expanded()}\n"
-        f"is the node terminal? {node.is_terminal()}\n"
-        f"node's available actions: {node.available_actions}\n"
-        f"node's children: {len(node.children)}\n"
-    )
-    
-    # # TODO: Implement MCTS logic here to select the best move based on simulations
-    # stopping_condition = 1000  # Number of simulations to run
-    # for _ in range(stopping_condition):
-    #     node = root
+        if not node.is_terminal() and not node.is_fully_expanded():
+            node = node.expand()
 
-    #     if not node:
-    #         print("no node, returning down.")
-    #         return {"move": "down"}
+        winner = node.rollout()
+        node.backpropagate(winner)
 
-    #     # Selection
-    #     while not node.is_terminal() and not node.is_fully_expanded():
-    #         node = node.best_child()
-        
-    #     # Expansion
-    #     if not node.is_terminal():
-    #         node = node.expand()
-        
-    #     result = node.rollout()
-    #     node.backpropagate(result)
-
-
-    # if not root.children:
-    #     return {"move": "down"}
-    
-    # best_child = max(root.children, key=lambda c: c.nodeVisits)
+    best_child = max(root.children, key=lambda c: c.nodeVisits)
 
     # print(
     #     f"MCTS: 1000 sims | "
@@ -242,7 +243,7 @@ def make_mcts_move(game_state: typing.Dict) -> str:
     #     f"winrate={best_child.wins / best_child.nodeVisits:.2f}"
     # )
 
-    return {"move": "up"}
+    return {"move": best_child.action}
 
 
 

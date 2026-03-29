@@ -15,6 +15,18 @@ class MCTSNode:
     self.children: typing.List['MCTSNode'] = []
     self.available_actions = self.get_available_actions(game_state)
 
+  def get_new_head(self, head, move):
+    new_head = head.copy()
+    if move == "up":
+      new_head["y"] += 1
+    elif move == "down":
+      new_head["y"] -= 1
+    elif move == "left":
+      new_head["x"] -= 1
+    elif move == "right":
+      new_head["x"] += 1
+    return new_head
+
   # maybe this could be better so our code can be more DRY
   def get_available_actions(self, game_state):
     my_id = game_state['you']['id']
@@ -34,22 +46,10 @@ class MCTSNode:
     elif my_neck["y"] < my_head["y"]: is_move_safe["down"] = False
     elif my_neck["y"] > my_head["y"]: is_move_safe["up"] = False
 
-    def get_new_head(head, move):
-      new_head = head.copy()
-      if move == "up":
-        new_head["y"] += 1
-      elif move == "down":
-        new_head["y"] -= 1
-      elif move == "left":
-        new_head["x"] -= 1
-      elif move == "right":
-        new_head["x"] += 1
-      return new_head
-
     for m in list(is_move_safe):
       if not is_move_safe[m]:
         continue
-      new_head = get_new_head(my_head, m)
+      new_head = self.get_new_head(my_head, m)
       if not (0 <= new_head["x"] < board_width and 0 <= new_head["y"] < board_height):
         is_move_safe[m] = False
         continue
@@ -71,6 +71,8 @@ class MCTSNode:
     
     action = self.available_actions.pop()
     new_game_state = deepcopy(self.game_state)
+    new_head = self.get_new_head(new_game_state['you']['body'][0], action)
+    new_game_state['you']['body'].insert(0, new_head)
     child_node = MCTSNode(new_game_state, id=None, parent=self, action=action)
     self.children.append(child_node)
     return child_node
@@ -132,3 +134,6 @@ class MCTSNode:
         return False
 
       move = random.choice(available_moves)
+      new_head = self.get_new_head(current_state['you']['body'][0], move)
+      current_state['you']['body'].insert(0, new_head)
+      depth += 1
