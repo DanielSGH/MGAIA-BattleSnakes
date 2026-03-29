@@ -63,7 +63,10 @@ class MCTSNode:
     return [m for m, safe in is_move_safe.items() if safe]
   
   def is_fully_expanded(self):
-    return len(self.available_actions) == 0
+    return len(self.available_actions) == 0 and len(self.children) > 0
+  
+  def is_dead_end(self):
+    return len(self.available_actions) == 0 and len(self.children) == 0
   
   def expand(self):
     if self.is_fully_expanded():
@@ -73,6 +76,12 @@ class MCTSNode:
     new_game_state = deepcopy(self.game_state)
     new_head = self.get_new_head(new_game_state['you']['body'][0], action)
     new_game_state['you']['body'].insert(0, new_head)
+
+    for snake in new_game_state['board']['snakes']:
+      if snake['id'] == new_game_state['you']['id']:
+        snake['body'].insert(0, new_head)
+        break
+
     child_node = MCTSNode(new_game_state, id=None, parent=self, action=action)
     self.children.append(child_node)
     return child_node
@@ -87,8 +96,8 @@ class MCTSNode:
       return math.inf
     
     Q_sa = self.wins / self.nodeVisits
-    N_s = self.nodeVisits
-    N_sa = self.totalVisits
+    N_s = self.parent.nodeVisits
+    N_sa = self.nodeVisits
     return Q_sa + C * math.sqrt(math.log(N_s) / N_sa)
   
   # TODO: Implement
@@ -96,18 +105,9 @@ class MCTSNode:
     raise NotImplementedError("RAVE is not implemented yet")
   
   def best_child(self, C=1.414213562) -> typing.Optional['MCTSNode']:
-    for child in self.children:
-      if child.nodeVisits == 0:
-        return child
-      
-    best_score = -math.inf
-    best_child = None
-    for child in self.children:
-      score = child.wins / child.nodeVisits + C * math.sqrt((2 * math.log(self.nodeVisits)) / child.nodeVisits)
-      if score > best_score:
-        best_score = score
-        best_child = child
-    return best_child
+    if not self.children:
+        return None
+    return max(self.children, key=lambda c: c.ucb1_score(C))
   
   def backpropagate(self, result):
     self.nodeVisits += 1
@@ -137,3 +137,5 @@ class MCTSNode:
       new_head = self.get_new_head(current_state['you']['body'][0], move)
       current_state['you']['body'].insert(0, new_head)
       depth += 1
+    
+    return True

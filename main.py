@@ -30,10 +30,8 @@ def get_new_head(head, move):
         new_head["x"] += 1
     return new_head
 
-
 def manhattan_dist(a, b):
     return abs(a["x"] - b["x"]) + abs(a["y"] - b["y"])
-
 
 def get_best_moves_towards(safe_moves, head, targets):
     if not targets:
@@ -225,16 +223,20 @@ def make_mcts_move(game_state: typing.Dict) -> str:
     while time.time() < deadline:
         node = root
 
-        while not node.is_terminal() and node.is_fully_expanded():
+        while not node.is_terminal() and not node.is_dead_end() and node.is_fully_expanded():
             node = node.best_child()
 
-        if not node.is_terminal() and not node.is_fully_expanded():
+        if not node.is_terminal() and not node.is_dead_end() and not node.is_fully_expanded():
             node = node.expand()
 
         winner = node.rollout()
         node.backpropagate(winner)
 
     best_child = max(root.children, key=lambda c: c.nodeVisits)
+
+    if not root.children:
+        safe = MCTSNode(game_state, 0, None, None).available_actions
+        return {"move": random.choice(safe) if safe else "up"}
 
     # print(
     #     f"MCTS: 1000 sims | "
