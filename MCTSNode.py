@@ -35,45 +35,46 @@ class MCTSNode:
     # Remove snakes out of bounds or starved
     alive = []
     for s in snakes:
-        head = s['body'][0]
-        if not (0 <= head['x'] < self.board_width and 0 <= head['y'] < self.board_height):
-            continue
-        if s['health'] <= 0:
-            continue
-        alive.append(s)
+      head = s['body'][0]
+      if not (0 <= head['x'] < self.board_width and 0 <= head['y'] < self.board_height):
+        continue
+      if s['health'] <= 0:
+        continue
+      alive.append(s)
 
     snakes = alive
 
     # Body collisions
     occupied = set()
     for s in snakes:
-        for segment in s['body'][1:]:
-            occupied.add((segment['x'], segment['y']))
+      for segment in s['body'][1:]:
+        occupied.add((segment['x'], segment['y']))
 
     alive = []
     for s in snakes:
-        head = s['body'][0]
-        if (head['x'], head['y']) in occupied:
-            continue
-        alive.append(s)
+      head = s['body'][0]
+      if (head['x'], head['y']) in occupied:
+        continue
+      alive.append(s)
 
     snakes = alive
 
     # Head-to-head collisions
     head_positions = {}
     for s in snakes:
-        pos = (s['body'][0]['x'], s['body'][0]['y'])
-        head_positions.setdefault(pos, []).append(s)
+      pos = (s['body'][0]['x'], s['body'][0]['y'])
+      head_positions.setdefault(pos, []).append(s)
 
     survivors = []
     for pos, ss in head_positions.items():
-        if len(ss) == 1:
-            survivors.append(ss[0])
-        else:
-            max_len = max(len(s['body']) for s in ss)
-            for s in ss:
-                if len(s['body']) == max_len:
-                    survivors.append(s)
+      if len(ss) == 1:
+        survivors.append(ss[0])
+      else:
+        max_len = max(len(s['body']) for s in ss)
+        biggest = [s for s in ss if len(s['body']) == max_len]
+
+        if len(biggest) == 1:
+          survivors.append(biggest[0])
 
     game_state['board']['snakes'] = survivors
 
@@ -124,7 +125,7 @@ class MCTSNode:
   
   def expand(self):
     if self.is_fully_expanded():
-        return None
+      return None
 
     action = self.available_actions.pop()
     new_game_state = deepcopy(self.game_state)
@@ -139,39 +140,39 @@ class MCTSNode:
 
     # Sample opponent moves once
     for snake in snakes:
-        if snake['id'] == my_id:
-            continue
-        moves = self.get_available_actions(new_game_state, snake)
-        if moves:
-            moves_dict[snake['id']] = random.choice(moves)
-        else:
-            moves_dict[snake['id']] = None
+      if snake['id'] == my_id:
+        continue
+      moves = self.get_available_actions(new_game_state, snake)
+      if moves:
+        moves_dict[snake['id']] = random.choice(moves)
+      else:
+        moves_dict[snake['id']] = None
 
     # Apply all moves
     for snake in snakes:
-        move = moves_dict[snake['id']]
-        if move is None:
-            continue
+      move = moves_dict[snake['id']]
+      if move is None:
+        continue
 
-        new_head = self.get_new_head(snake['body'][0], move)
-        snake['body'].insert(0, new_head)
-        snake['health'] -= 1
+      new_head = self.get_new_head(snake['body'][0], move)
+      snake['body'].insert(0, new_head)
+      snake['health'] -= 1
 
-        if new_head in new_game_state['board']['food']:
-            snake['health'] = 100
-            new_game_state['board']['food'].remove(new_head)
+      if new_head in new_game_state['board']['food']:
+        snake['health'] = 100
+        new_game_state['board']['food'].remove(new_head)
 
     # Resolve collisions
     new_game_state = self.resolve_collisions(new_game_state)
 
     # Sync our snake
     for snake in new_game_state['board']['snakes']:
-        if snake['id'] == my_id:
-            new_game_state['you'] = snake
-            break
+      if snake['id'] == my_id:
+        new_game_state['you'] = snake
+        break
     else:
-        new_game_state['you']['body'] = []
-        new_game_state['you']['health'] = 0
+      new_game_state['you']['body'] = []
+      new_game_state['you']['health'] = 0
 
     child_node = MCTSNode(new_game_state, id=my_id, parent=self, action=action)
     self.children.append(child_node)
@@ -223,25 +224,25 @@ class MCTSNode:
       # Move all snakes randomly
       moves_dict = {}
       for snake in snakes:
-          moves = self.get_available_actions(current_state, snake)
-          if moves:
-              moves_dict[snake['id']] = random.choice(moves)
-          else:
-              moves_dict[snake['id']] = None
+        moves = self.get_available_actions(current_state, snake)
+        if moves:
+          moves_dict[snake['id']] = random.choice(moves)
+        else:
+          moves_dict[snake['id']] = None
 
       # Apply moves
       for snake in snakes:
-          move = moves_dict[snake['id']]
-          if move is None:
-              continue
+        move = moves_dict[snake['id']]
+        if move is None:
+          continue
 
-          new_head = self.get_new_head(snake['body'][0], move)
-          snake['body'].insert(0, new_head)
-          snake['health'] -= 1
+        new_head = self.get_new_head(snake['body'][0], move)
+        snake['body'].insert(0, new_head)
+        snake['health'] -= 1
 
-          if new_head in current_state['board']['food']:
-              snake['health'] = 100
-              current_state['board']['food'].remove(new_head)
+        if new_head in current_state['board']['food']:
+          snake['health'] = 100
+          current_state['board']['food'].remove(new_head)
 
       # Resolve ALL collisions after  movement
       current_state = self.resolve_collisions(current_state)
