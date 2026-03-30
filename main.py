@@ -205,7 +205,7 @@ def make_mcts_move(game_state: typing.Dict) -> str:
     
     
 
-    # print(1
+    # print(
     #     f"is the node expanded? {node.is_fully_expanded()}\n"
     #     f"is the node terminal? {node.is_terminal()}\n"
     #     f"node's available actions: {node.available_actions}\n"
@@ -215,14 +215,13 @@ def make_mcts_move(game_state: typing.Dict) -> str:
     # print([c.ucb1_score() for c in node.children])
     
     # TODO: Implement MCTS logic here to select the best move based on simulations
-    root = MCTSNode(deepcopy(game_state), 0, None, None)
+    root = MCTSNode(deepcopy(game_state), None, None)
 
     deadline = time.time() + 850 / 1000.0
     
     node = root
     while time.time() < deadline:
         node = root
-
         while not node.is_terminal() and not node.is_dead_end() and node.is_fully_expanded():
             node = node.best_child()
 
@@ -235,8 +234,8 @@ def make_mcts_move(game_state: typing.Dict) -> str:
     best_child = max(root.children, key=lambda c: c.nodeVisits)
 
     if not root.children:
-        safe = MCTSNode(game_state, 0, None, None).available_actions
-        return {"move": random.choice(safe) if safe else "up"}
+        safe = MCTSNode(game_state, None, None).available_actions
+        return {"move": random.choice(safe) if safe else "down"}
 
     # print(
     #     f"MCTS: 1000 sims | "

@@ -4,11 +4,10 @@ import random
 import typing
 
 class MCTSNode:
-  def __init__(self, game_state, id, parent, action):
+  def __init__(self, game_state, parent, action):
     self.game_state = game_state
     self.board_width = game_state['board']['width']
     self.board_height = game_state['board']['height']
-    self.id = id
     self.parent = parent
     self.action = action
     self.nodeVisits = 0
@@ -117,11 +116,33 @@ class MCTSNode:
 
     return [m for m, safe in is_move_safe.items() if safe]
   
+  def manhattan_dist(self,a, b):
+      return abs(a["x"] - b["x"]) + abs(a["y"] - b["y"])
+
+  def evaluate_position(self, head, game_state):
+    my_id = game_state['you']['id']
+    score = 0
+    food = game_state['board']['food']
+    if food:
+      min_dist = min(self.manhattan_dist(head, f) for f in food)
+      score += 100 / (min_dist + 1)  # Reward closer food
+    opponents = [s for s in game_state['board']['snakes'] if s['id'] != my_id]
+    my_length = len(game_state['you']['body'])
+    for opp in opponents:
+      dist = self.manhattan_dist(head, opp['body'][0])
+      if my_length > len(opp['body']):
+          score += 50 / (dist + 1)  # Bonus for hunting smaller opponents
+      else:
+          score -= 50 / (dist + 1)  # Penalty for being near larger opponents
+    score += game_state['you']['health']  # Reward higher health
+    score += my_length * 10  # Reward longer length
+    return score
+
   def is_fully_expanded(self):
     return len(self.available_actions) == 0 and len(self.children) > 0 # can we not have a node with no children if all actions lead to terminal states?
   
   def is_dead_end(self):
-    return len(self.available_actions) == 0 and len(self.children) == 0 # or is that this function, but it is not used anywher in the code
+    return len(self.available_actions) == 0 and len(self.children) == 0 # or is that this function, but it is not used anywhere in the code
   
   def expand(self):
     if self.is_fully_expanded():
@@ -129,7 +150,7 @@ class MCTSNode:
 
     action = self.available_actions.pop()
     new_game_state = deepcopy(self.game_state)
-    my_id = self.id
+    my_id = self.game_state['you']['id']
 
     snakes = new_game_state['board']['snakes']
 
@@ -174,13 +195,13 @@ class MCTSNode:
       new_game_state['you']['body'] = []
       new_game_state['you']['health'] = 0
 
-    child_node = MCTSNode(new_game_state, id=my_id, parent=self, action=action)
+    child_node = MCTSNode(new_game_state, parent=self, action=action)
     self.children.append(child_node)
     return child_node
 
   def is_terminal(self) -> bool:
     snakes = self.game_state['board']['snakes']
-    my_id = self.id
+    my_id = self.game_state['you']['id']
     return not any(s['id'] == my_id for s in snakes)
   
   def ucb1_score(self, C=1.414213562):
@@ -204,8 +225,9 @@ class MCTSNode:
   def backpropagate(self, result):
     self.nodeVisits += 1
     self.totalVisits += 1
-    if result:
-      self.wins += 1
+    # THISSSS!!!!
+    if result != 0:
+      self.wins += result
     
     if self.parent:
       self.parent.backpropagate(result)
@@ -215,7 +237,7 @@ class MCTSNode:
     max_depth = 100
 
     current_state = deepcopy(self.game_state)
-    my_id = self.id
+    my_id = self.game_state['you']['id']
     while depth < max_depth:
       snakes = current_state['board']['snakes']
       if not any(s['id'] == my_id for s in snakes):
@@ -251,4 +273,4 @@ class MCTSNode:
 
       depth += 1
     # Reward: survived max_depth
-    return 1
+    return self.evaluate_position(current_state['you']['body'][0], current_state)
