@@ -49,22 +49,67 @@ def get_best_moves_towards(safe_moves, head, targets):
     return best_moves if best_moves else safe_moves
 
 
-def evaluate_position(head, game_state, my_id):
+def flood_fill(self, start, game_state, max_tiles=50): # checks if we are trapped or not, and how much space we have to move around in
+    visited = set()
+    stack = [(start['x'], start['y'])]
+    occupied = set()
+
+    for s in game_state['board']['snakes']:
+        for b in s['body']:
+            occupied.add((b['x'], b['y']))
+
+    count = 0
+    while stack and count < max_tiles:
+        x, y = stack.pop()
+        if (x, y) in visited or (x, y) in occupied:
+            continue
+
+        if not (0 <= x < self.board_width and 0 <= y < self.board_height):
+            continue
+
+        visited.add((x, y))
+        count += 1
+
+        stack.extend([
+            (x+1, y), (x-1, y),
+            (x, y+1), (x, y-1)
+        ])
+
+    return count
+
+def evaluate_position(self, head, game_state):
+    my_id = game_state['you']['id']
     score = 0
     food = game_state['board']['food']
     if food:
-        min_dist = min(manhattan_dist(head, f) for f in food)
+        min_dist = min(self.manhattan_dist(head, f) for f in food)
         score += 100 / (min_dist + 1)  # Reward closer food
+        
     opponents = [s for s in game_state['board']['snakes'] if s['id'] != my_id]
     my_length = len(game_state['you']['body'])
     for opp in opponents:
-        dist = manhattan_dist(head, opp['body'][0])
+        opp_head = opp['body'][0]
+        dist = self.manhattan_dist(head, opp_head)
+
         if my_length > len(opp['body']):
-            score += 50 / (dist + 1)  # Bonus for hunting smaller opponents
+            score += 100 / (dist + 1)  # stronger hunting
+        elif my_length < len(opp['body']):
+            score -= 150 / (dist + 1)  # stronger fear
         else:
-            score -= 50 / (dist + 1)  # Penalty for being near larger opponents
+            score -= 80 / (dist + 1)   # avoid equal fights
+          
     score += game_state['you']['health']  # Reward higher health
     score += my_length * 10  # Reward longer length
+    
+    num_snakes = len(game_state['board']['snakes']) # Fewer opponents is better, outlive them
+    score += (10 - num_snakes) * 200
+    
+    safe_moves = len(self.get_available_actions(game_state, game_state['you'])) # More safe moves means more options and less chance of getting trapped
+    score += safe_moves * 50
+    
+    space = self.flood_fill(head, game_state) # More space means less chance of getting trapped, and more room to maneuver
+    score += space * 3
+    
     return score
 
 
