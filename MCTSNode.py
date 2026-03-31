@@ -4,12 +4,13 @@ import random
 import typing
 
 class MCTSNode:
-	def __init__(self, game_state, parent, action):
+	def __init__(self, game_state, parent, action, policy='heuristic'):
 		self.game_state = game_state
 		self.board_width = game_state['board']['width']
 		self.board_height = game_state['board']['height']
 		self.parent = parent
 		self.action = action
+		self.policy = policy
 		self.nodeVisits = 0
 		self.totalVisits = 0
 		self.wins = 0
@@ -327,7 +328,30 @@ class MCTSNode:
 			for snake in snakes:
 				moves = self.get_available_actions(current_state, snake)
 				if moves:
-					moves_dict[snake['id']] = random.choice(moves)
+					if snake['id'] == my_id and self.policy == 'heuristic':
+						# Pure heuristic: pick the move with the highest evaluation
+						best_move = None
+						best_score = float('-inf')
+						my_head = snake['body'][0]
+						for move in moves:
+							new_head = self.get_new_head(my_head, move)
+							# Simulate the move
+							temp_snake = deepcopy(snake)
+							temp_snake['body'] = [new_head] + temp_snake['body']
+							temp_game_state = deepcopy(current_state)
+							# Replace our snake in temp_game_state
+							for idx, s in enumerate(temp_game_state['board']['snakes']):
+								if s['id'] == my_id:
+									temp_game_state['board']['snakes'][idx] = temp_snake
+									break
+							temp_game_state['you'] = temp_snake
+							score = self.evaluate_position(new_head, temp_game_state)
+							if score > best_score:
+								best_score = score
+								best_move = move
+						moves_dict[snake['id']] = best_move
+					else:
+						moves_dict[snake['id']] = random.choice(moves)
 				else:
 					moves_dict[snake['id']] = None
 

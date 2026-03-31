@@ -260,7 +260,7 @@ def make_mcts_move(game_state: typing.Dict) -> str:
     # print([c.ucb1_score() for c in node.children])
     
     # TODO: Implement MCTS logic here to select the best move based on simulations
-    root = MCTSNode(deepcopy(game_state), None, None)
+    root = MCTSNode(deepcopy(game_state), None, None, policy='heuristic')
 
     deadline = time.time() + 850 / 1000.0
     
