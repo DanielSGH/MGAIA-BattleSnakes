@@ -153,6 +153,10 @@ class MCTSNode:
 			for b in s['body']:
 				occupied.add((b['x'], b['y']))
 
+		if 'hazards' in game_state['board']:
+			for h in game_state['board']['hazards']:
+				occupied.add((h['x'], h['y']))
+
 		count = 0
 		while stack and count < max_tiles:
 			x, y = stack.pop()
