@@ -30,6 +30,45 @@ def get_new_head(head, move):
         new_head["x"] += 1
     return new_head
 
+def get_available_actions(game_state, snake):
+    board_width = game_state['board']['width']
+    board_height = game_state['board']['height']
+    
+    my_id = snake['id']
+    my_snake = next((s for s in game_state['board']['snakes'] if s['id'] == my_id), None)
+    if not my_snake:
+        return []
+
+    my_head = my_snake['body'][0]
+    my_neck = my_snake['body'][1] if len(my_snake['body']) > 1 else my_head
+
+    is_move_safe = {"up": True, "down": True, "left": True, "right": True}
+
+    # No reversing
+    if my_neck["x"] < my_head["x"]: is_move_safe["left"] = False
+    elif my_neck["x"] > my_head["x"]: is_move_safe["right"] = False
+    elif my_neck["y"] < my_head["y"]: is_move_safe["down"] = False
+    elif my_neck["y"] > my_head["y"]: is_move_safe["up"] = False
+
+    for m in list(is_move_safe):
+        if not is_move_safe[m]:
+            continue
+        new_head = get_new_head(my_head, m)
+        # Out of bounds
+        if not (0 <= new_head["x"] < board_width and 0 <= new_head["y"] < board_height):
+            is_move_safe[m] = False
+            continue
+
+        # Collide with any body (except tail if not eating)
+        for snake in game_state['board']['snakes']:
+            # If snake will eat, its tail stays; otherwise, tail moves
+            body_to_check = snake['body'][:-1] if len(snake['body']) > 1 else snake['body']
+            if new_head in body_to_check:
+                is_move_safe[m] = False
+                break
+
+    return [m for m, safe in is_move_safe.items() if safe]
+
 def manhattan_dist(a, b):
     return abs(a["x"] - b["x"]) + abs(a["y"] - b["y"])
 
@@ -49,7 +88,7 @@ def get_best_moves_towards(safe_moves, head, targets):
     return best_moves if best_moves else safe_moves
 
 
-def flood_fill(self, start, game_state, max_tiles=50): # checks if we are trapped or not, and how much space we have to move around in
+def flood_fill(start, game_state, max_tiles=50): # checks if we are trapped or not, and how much space we have to move around in
     visited = set()
     stack = [(start['x'], start['y'])]
     occupied = set()
@@ -64,7 +103,7 @@ def flood_fill(self, start, game_state, max_tiles=50): # checks if we are trappe
         if (x, y) in visited or (x, y) in occupied:
             continue
 
-        if not (0 <= x < self.board_width and 0 <= y < self.board_height):
+        if not (0 <= x < game_state['board']['width'] and 0 <= y < game_state['board']['height']):
             continue
 
         visited.add((x, y))
@@ -77,19 +116,19 @@ def flood_fill(self, start, game_state, max_tiles=50): # checks if we are trappe
 
     return count
 
-def evaluate_position(self, head, game_state):
+def evaluate_position(head, game_state):
     my_id = game_state['you']['id']
     score = 0
     food = game_state['board']['food']
     if food:
-        min_dist = min(self.manhattan_dist(head, f) for f in food)
+        min_dist = min(manhattan_dist(head, f) for f in food)
         score += 100 / (min_dist + 1)  # Reward closer food
         
     opponents = [s for s in game_state['board']['snakes'] if s['id'] != my_id]
     my_length = len(game_state['you']['body'])
     for opp in opponents:
         opp_head = opp['body'][0]
-        dist = self.manhattan_dist(head, opp_head)
+        dist = manhattan_dist(head, opp_head)
 
         if my_length > len(opp['body']):
             score += 100 / (dist + 1)  # stronger hunting
@@ -104,10 +143,10 @@ def evaluate_position(self, head, game_state):
     num_snakes = len(game_state['board']['snakes']) # Fewer opponents is better, outlive them
     score += (10 - num_snakes) * 200
     
-    safe_moves = len(self.get_available_actions(game_state, game_state['you'])) # More safe moves means more options and less chance of getting trapped
+    safe_moves = len(get_available_actions(game_state, game_state['you'])) # More safe moves means more options and less chance of getting trapped
     score += safe_moves * 50
     
-    space = self.flood_fill(head, game_state) # More space means less chance of getting trapped, and more room to maneuver
+    space = flood_fill(head, game_state) # More space means less chance of getting trapped, and more room to maneuver
     score += space * 3
     
     return score
@@ -228,7 +267,17 @@ def move(game_state: typing.Dict) -> typing.Dict:
     
     for move in safe_moves:
         new_head = get_new_head(my_head, move)
-        score = evaluate_position(new_head, game_state, my_id)
+        # Simulate the move
+        temp_snake = deepcopy(snake)
+        temp_snake['body'] = [new_head] + temp_snake['body']
+        temp_game_state = deepcopy(game_state)
+        # Replace our snake in temp_game_state
+        for idx, s in enumerate(temp_game_state['board']['snakes']):
+            if s['id'] == my_id:
+                temp_game_state['board']['snakes'][idx] = temp_snake
+                break
+        temp_game_state['you'] = temp_snake
+        score = evaluate_position(new_head, temp_game_state)
         if score > best_score:
             best_score = score
             best_move = move
@@ -260,27 +309,29 @@ def make_mcts_move(game_state: typing.Dict) -> str:
     # print([c.ucb1_score() for c in node.children])
     
     # TODO: Implement MCTS logic here to select the best move based on simulations
-    root = MCTSNode(deepcopy(game_state), None, None, policy='heuristic')
+    root = MCTSNode(deepcopy(game_state), None, None, policy='heuristic', score_method="ucb1")
 
     deadline = time.time() + 850 / 1000.0
     
     node = root
     while time.time() < deadline:
         node = root
+        node : MCTSNode
         while not node.is_terminal() and not node.is_dead_end() and node.is_fully_expanded():
             node = node.best_child()
 
         if not node.is_terminal() and not node.is_dead_end() and not node.is_fully_expanded():
             node = node.expand()
 
-        winner = node.rollout()
-        node.backpropagate(winner)
+        winner, amaf_actions = node.rollout()
+        node.backpropagate(winner, amaf_actions)
 
-    best_child = max(root.children, key=lambda c: c.nodeVisits)
+    if root.children:
+        best_child = max(root.children, key=lambda c: c.nodeVisits)
 
-    if not root.children:
+    else:
         safe = MCTSNode(game_state, None, None).available_actions
-        return {"move": random.choice(safe) if safe else "down"}
+        return f"move {random.choice(safe) if safe else 'down'}"
 
     # print(
     #     f"MCTS: 1000 sims | "
@@ -289,7 +340,7 @@ def make_mcts_move(game_state: typing.Dict) -> str:
     #     f"winrate={best_child.wins / best_child.nodeVisits:.2f}"
     # )
 
-    return {"move": best_child.action}
+    return f"move {best_child.action}"
 
 
 

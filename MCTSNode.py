@@ -2,9 +2,10 @@ import math
 from copy import deepcopy
 import random
 import typing
+from collections import defaultdict
 
 class MCTSNode:
-	def __init__(self, game_state, parent, action, policy='heuristic'):
+	def __init__(self, game_state, parent, action, policy='heuristic', score_method='ucb1'):
 		self.game_state = game_state
 		self.board_width = game_state['board']['width']
 		self.board_height = game_state['board']['height']
@@ -14,6 +15,9 @@ class MCTSNode:
 		self.nodeVisits = 0
 		self.totalVisits = 0
 		self.wins = 0
+		self.score_method = score_method  # or "rave" or "grave"
+		self.amaf_visits: typing.Dict[str, int] = defaultdict(int)   # action -> count
+		self.amaf_wins: typing.Dict[str, float] = defaultdict(float)     # action -> wins
 		self.children: typing.List['MCTSNode'] = []
 		self.available_actions = self.get_available_actions(game_state, game_state['you'])
 
@@ -107,7 +111,6 @@ class MCTSNode:
 
 		return game_state
 
-	# maybe this could be better so our code can be more DRY
 	def get_available_actions(self, game_state, snake):
 		my_id = snake['id']
 		my_snake = next((s for s in game_state['board']['snakes'] if s['id'] == my_id), None)
@@ -183,12 +186,14 @@ class MCTSNode:
 	def evaluate_position(self, head, game_state):
 		my_id = game_state['you']['id']
 		score = 0
+		snakes = game_state['board']['snakes']
+  
 		food = game_state['board']['food']
 		if food:
 			min_dist = min(self.manhattan_dist(head, f) for f in food)
 			score += 100 / (min_dist + 1)  # Reward closer food
 
-		opponents = [s for s in game_state['board']['snakes'] if s['id'] != my_id]
+		opponents = [s for s in snakes if s['id'] != my_id]
 		my_length = len(game_state['you']['body'])
 		for opp in opponents:
 			opp_head = opp['body'][0]
@@ -204,7 +209,7 @@ class MCTSNode:
 		score += game_state['you']['health']  # Reward higher health
 		score += my_length * 10  # Reward longer length
 
-		num_snakes = len(game_state['board']['snakes']) # Fewer opponents is better, outlive them
+		num_snakes = len(snakes) # Fewer opponents is better, outlive them
 		score += (10 - num_snakes) * 200
 
 		safe_moves = len(self.get_available_actions(game_state, game_state['you'])) # More safe moves means more options and less chance of getting trapped
@@ -291,6 +296,43 @@ class MCTSNode:
 		N_sa = self.nodeVisits
 		return Q_sa + C * math.sqrt(math.log(N_s) / N_sa)
 
+	def rave_score(self):
+		if self.nodeVisits == 0:
+			return math.inf
+
+		ref = self.parent  # start from parent
+		while ref.parent is not None:
+			if ref.nodeVisits >= 10:
+				break
+			ref = ref.parent
+
+		parent = self.parent
+		action = self.action
+
+		# Standard value (same as before)
+		C = math.sqrt(2)
+		Q_sa = self.wins / self.nodeVisits
+		N_s = parent.nodeVisits
+		N_sa = self.nodeVisits
+
+		if self.score_method == "rave":
+			# AMAF rave values
+			amaf_n = parent.amaf_visits.get(action, 0)
+			amaf_w = parent.amaf_wins.get(action, 0)
+		else:
+			# AMAF grave values
+			amaf_n = ref.amaf_visits.get(action, 0)
+			amaf_w = ref.amaf_wins.get(action, 0)
+
+		amaf = amaf_w / amaf_n if amaf_n > 0 else 0
+
+		# Blend
+		beta = amaf_n / (self.nodeVisits + amaf_n + 1e-6)
+
+		blended = (1 - beta) * Q_sa + beta * amaf
+
+		return blended + C * math.sqrt(math.log(N_s) / N_sa)
+
 	# TODO: Implement
 	def rapid_value_action_estimation(self):
 		raise NotImplementedError("RAVE is not implemented yet")
@@ -298,16 +340,26 @@ class MCTSNode:
 	def best_child(self) -> typing.Optional['MCTSNode']:
 		if not self.children:
 			return None
-		return max(self.children, key=lambda c: c.ucb1_score())
+		if self.score_method == "ucb1":
+			return max(self.children, key=lambda c: c.ucb1_score())
+		else:
+			return max(self.children, key=lambda c: c.rave_score())
 
-	def backpropagate(self, result):
+	def backpropagate(self, result, amaf_actions=None):
 		self.nodeVisits += 1
 		self.totalVisits += 1
+		# Update AMAF stats for all actions taken in the simulation
+		if amaf_actions is not None:
+			for action in amaf_actions:
+				self.amaf_visits[action] += 1
+				if result != 0:
+					self.amaf_wins[action] += result
+		# Standard win update
 		if result != 0:
 			self.wins += result
 
 		if self.parent:
-			self.parent.backpropagate(result)
+			self.parent.backpropagate(result, amaf_actions)
 
 	def rollout(self):
 		depth = 0
@@ -317,10 +369,12 @@ class MCTSNode:
 		my_id = self.game_state['you']['id']
 		turn = current_state.get('turn', 0)
 		survived = 0
+		amaf_actions = []  # Track all actions taken by our agent
 		while depth < max_depth:
 			snakes = current_state['board']['snakes']
 			if not any(s['id'] == my_id for s in snakes):
-				return 0  # Lost
+				# Return both result and actions for AMAF
+				return 0, amaf_actions  # Lost
 
 			survived += 1
 			# Move all snakes randomly
@@ -350,8 +404,12 @@ class MCTSNode:
 								best_score = score
 								best_move = move
 						moves_dict[snake['id']] = best_move
+						amaf_actions.append(best_move)
 					else:
-						moves_dict[snake['id']] = random.choice(moves)
+						chosen = random.choice(moves)
+						moves_dict[snake['id']] = chosen
+						if snake['id'] == my_id:
+							amaf_actions.append(chosen)
 				else:
 					moves_dict[snake['id']] = None
 
@@ -375,4 +433,5 @@ class MCTSNode:
 
 			depth += 1
 		# Reward: survived max_depth
-		return self.evaluate_position(current_state['you']['body'][0], current_state)
+		final_score = self.evaluate_position(current_state['you']['body'][0], current_state)
+		return final_score, amaf_actions
