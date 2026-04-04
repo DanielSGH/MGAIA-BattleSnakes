@@ -309,7 +309,7 @@ def make_mcts_move(game_state: typing.Dict) -> str:
     # print([c.ucb1_score() for c in node.children])
     
     # TODO: Implement MCTS logic here to select the best move based on simulations
-    root = MCTSNode(deepcopy(game_state), None, None, policy='heuristic', score_method="ucb1")
+    root = MCTSNode(deepcopy(game_state), None, None, policy='heuristic', score_method="ucb1_tuned")
 
     deadline = time.time() + 850 / 1000.0
     
@@ -331,7 +331,7 @@ def make_mcts_move(game_state: typing.Dict) -> str:
 
     else:
         safe = MCTSNode(game_state, None, None).available_actions
-        return f"move {random.choice(safe) if safe else 'down'}"
+        return {"move": random.choice(safe) if safe else "up"}
 
     # print(
     #     f"MCTS: 1000 sims | "
@@ -340,7 +340,7 @@ def make_mcts_move(game_state: typing.Dict) -> str:
     #     f"winrate={best_child.wins / best_child.nodeVisits:.2f}"
     # )
 
-    return f"move {best_child.action}"
+    return {"move": best_child.action}
 
 
 

@@ -15,6 +15,7 @@ class MCTSNode:
 		self.nodeVisits = 0
 		self.totalVisits = 0
 		self.wins = 0
+		self.wins_sq = 0
 		self.score_method = score_method  # or "rave" or "grave"
 		self.amaf_visits: typing.Dict[str, int] = defaultdict(int)   # action -> count
 		self.amaf_wins: typing.Dict[str, float] = defaultdict(float)     # action -> wins
@@ -295,6 +296,16 @@ class MCTSNode:
 		N_s = self.parent.nodeVisits
 		N_sa = self.nodeVisits
 		return Q_sa + C * math.sqrt(math.log(N_s) / N_sa)
+	
+	def ucb1_tuned_score(self):
+		if self.nodeVisits == 0:
+			return math.inf
+		
+		r_k = self.wins / self.nodeVisits
+		t = self.parent.nodeVisits
+		t_k = self.nodeVisits
+		V = (self.wins_sq / t_k - r_k**2) + math.sqrt(2 * math.log(t) / t_k)
+		return r_k * math.sqrt((math.log(t) * min(0.25, V)) / t_k)
 
 	def rave_score(self):
 		if self.nodeVisits == 0:
@@ -333,15 +344,13 @@ class MCTSNode:
 
 		return blended + C * math.sqrt(math.log(N_s) / N_sa)
 
-	# TODO: Implement
-	def rapid_value_action_estimation(self):
-		raise NotImplementedError("RAVE is not implemented yet")
-
 	def best_child(self) -> typing.Optional['MCTSNode']:
 		if not self.children:
 			return None
 		if self.score_method == "ucb1":
 			return max(self.children, key=lambda c: c.ucb1_score())
+		elif self.score_method == "ucb1_tuned":
+			return max(self.children, key=lambda c: c.ucb1_tuned_score())
 		else:
 			return max(self.children, key=lambda c: c.rave_score())
 
@@ -357,6 +366,7 @@ class MCTSNode:
 		# Standard win update
 		if result != 0:
 			self.wins += result
+			self.wins_sq += result * result
 
 		if self.parent:
 			self.parent.backpropagate(result, amaf_actions)
