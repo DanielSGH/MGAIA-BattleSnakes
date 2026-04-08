@@ -3,6 +3,7 @@ from copy import deepcopy
 import random
 import typing
 from collections import defaultdict
+import numpy as np
 
 
 def fast_copy_game_state(game_state):
@@ -45,6 +46,7 @@ class MCTSNode:
 		self.game_state = game_state
 		self.board_width = game_state['board']['width']
 		self.board_height = game_state['board']['height']
+		self.max_snakes = max(len(game_state['board']['snakes']), parent.max_snakes if parent else 0)
 		self.parent = parent
 		self.action = action
 		self.policy = policy
@@ -57,6 +59,7 @@ class MCTSNode:
 		self.amaf_wins: typing.Dict[str, float] = defaultdict(float)     # action -> wins
 		self.children: typing.List['MCTSNode'] = []
 		self.available_actions = self.get_available_actions(game_state, game_state['you'])
+		random.shuffle(self.available_actions)  # Randomize expansion order
 
 	def get_new_head(self, head, move):
 		new_head = head.copy()
@@ -148,7 +151,7 @@ class MCTSNode:
 
 		return game_state
 
-	def get_available_actions(self, game_state, snake):
+	def get_available_actions(self, game_state, snake) -> typing.List[str]:
 		my_id = snake['id']
 		my_snake = next((s for s in game_state['board']['snakes'] if s['id'] == my_id), None)
 		if not my_snake:
@@ -188,15 +191,16 @@ class MCTSNode:
 		# checks if we are trapped or not, and how much space we have to move around in
 		visited = set()
 		stack = [(start['x'], start['y'])]
+  
 		occupied = set()
-
 		for s in game_state['board']['snakes']:
 			for b in s['body']:
 				occupied.add((b['x'], b['y']))
 
-		if 'hazards' in game_state['board']:
-			for h in game_state['board']['hazards']:
-				occupied.add((h['x'], h['y']))
+		# hazards = set()
+		# if 'hazards' in game_state['board']:
+		# 	for h in game_state['board']['hazards']:
+		# 		hazards.add((h['x'], h['y']))
 
 		count = 0
 		while stack and count < max_tiles:
@@ -225,10 +229,23 @@ class MCTSNode:
 		score = 0
 		snakes = game_state['board']['snakes']
   
+		hazards = set()
+		if 'hazards' in game_state['board']:
+			for h in game_state['board']['hazards']:
+				hazards.add((h['x'], h['y']))
+   
+		health = game_state['you']['health']
+		if health < 30:
+			score -= (30 - health) * 10  # low health penalty
+   
+		if (head['x'], head['y']) in hazards:
+			damage = self.get_hazard_damage(game_state.get('turn', 0))
+			score -= (200 + damage * 5) * 100/health  # strong penalty
+   
 		food = game_state['board']['food']
 		if food:
 			min_dist = min(self.manhattan_dist(head, f) for f in food)
-			score += 100 / (min_dist + 1)  # Reward closer food
+			score += (500 / (min_dist + 1)) * 100/health  # Reward closer food
 
 		opponents = [s for s in snakes if s['id'] != my_id]
 		my_length = len(game_state['you']['body'])
@@ -237,25 +254,31 @@ class MCTSNode:
 			dist = self.manhattan_dist(head, opp_head)
 
 			if my_length > len(opp['body']):
-				score += 100 / (dist + 1)  # stronger hunting
-			elif my_length < len(opp['body']):
-				score -= 150 / (dist + 1)  # stronger fear
+				score += 100 / (dist + 1)  
 			else:
-				score -= 80 / (dist + 1)   # avoid equal fights
+				score -= 500 / (dist + 1) 
 
-		score += game_state['you']['health']  # Reward higher health
-		score += my_length * 10  # Reward longer length
+		health = game_state['you']['health']
+		score += health * 3  # Reward higher health
+   
+		score += my_length * 50  # Reward longer length
 
 		num_snakes = len(snakes) # Fewer opponents is better, outlive them
-		score += (10 - num_snakes) * 200
+		score += (self.max_snakes - num_snakes) * 200
 
 		safe_moves = len(self.get_available_actions(game_state, game_state['you'])) # More safe moves means more options and less chance of getting trapped
-		score += safe_moves * 50
+		score += safe_moves * 100
 
 		space = self.flood_fill(head, game_state) # More space means less chance of getting trapped, and more room to maneuver
-		score += space * 3
+		if space < len(game_state['you']['body'])/2:
+			score -= 5000  # almost certain death soon
+		elif space < len(game_state['you']['body']):
+			print(f"Warning: Only {space} spaces available for a snake of length {len(game_state['you']['body'])}")
+			score -= 1000  # possible death soon
+		else:
+			score += space * 50
 
-		return score
+		return score/100  # scale down to keep values manageable
 
 	def is_fully_expanded(self):
 		return len(self.available_actions) == 0 and len(self.children) > 0 # can we not have a node with no children if all actions lead to terminal states?
@@ -267,7 +290,8 @@ class MCTSNode:
 		if self.is_fully_expanded():
 			return None
 
-		action = self.available_actions.pop()
+		action = random.choice(self.available_actions)
+		self.available_actions.remove(action)
 		new_game_state = fast_copy_game_state(self.game_state)
 		my_id = self.game_state['you']['id']
 		turn = new_game_state.get('turn', 0)
@@ -302,6 +326,8 @@ class MCTSNode:
 			if new_head in new_game_state['board']['food']:
 				snake['health'] = 100
 				new_game_state['board']['food'].remove(new_head)
+			else:
+				snake['body'].pop()  # Remove tail if not eating
 
 		# Resolve collisions and hazard damage
 		new_game_state = self.resolve_collisions(new_game_state, turn)
@@ -383,10 +409,11 @@ class MCTSNode:
 	def best_child(self) -> typing.Optional['MCTSNode']:
 		if not self.children:
 			return None
-		if self.score_method == "ucb1":
-			return max(self.children, key=lambda c: c.ucb1_score())
-		elif self.score_method == "ucb1_tuned":
+
+		if self.score_method == "ucb1_tuned":
 			return max(self.children, key=lambda c: c.ucb1_tuned_score())
+		elif self.score_method == "ucb1":
+			return max(self.children, key=lambda c: c.ucb1_score())
 		else:
 			return max(self.children, key=lambda c: c.rave_score())
 
@@ -420,7 +447,7 @@ class MCTSNode:
 			snakes = current_state['board']['snakes']
 			if not any(s['id'] == my_id for s in snakes):
 				# Return both result and actions for AMAF
-				return 0, amaf_actions  # Lost
+				return -100, amaf_actions  # Lost
 
 			survived += 1
 			# Move all snakes randomly
@@ -439,6 +466,11 @@ class MCTSNode:
 							temp_game_state = fast_copy_game_state(current_state)
 							temp_snake = next(s for s in temp_game_state['board']['snakes'] if s['id'] == my_id)
 							temp_snake['body'] = [new_head] + temp_snake['body']
+							if new_head in temp_game_state['board']['food']:
+								temp_snake['health'] = 100
+								temp_game_state['board']['food'].remove(new_head)
+							else:
+								temp_snake['body'].pop()  # Remove tail if not eating
 							# Replace our snake in temp_game_state
 							for idx, s in enumerate(temp_game_state['board']['snakes']):
 								if s['id'] == my_id:
@@ -448,6 +480,8 @@ class MCTSNode:
 							score = self.evaluate_position(new_head, temp_game_state)
 							if score > best_score:
 								best_score = score
+								best_move = move
+							elif score == best_score and random.random() < 0.5:  # Tie-breaker
 								best_move = move
 						moves_dict[snake['id']] = best_move
 						amaf_actions.append(best_move)

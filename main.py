@@ -65,6 +65,24 @@ def get_new_head(head, move):
         new_head["x"] += 1
     return new_head
 
+def get_hazard_damage(turn):
+    # Hazards appear from turn 26, stack every 25 turns (up to 4), stay for 75 turns, then drain
+    # Each stack: 14 damage, stacks up to 4 (max 56 damage)
+    # After 4 stacks, stays for 75 turns, then drains
+    if turn < 26:
+        return 0
+    # Determine stack count
+    stack = min(4, ((turn - 26) // 25) + 1)
+    # After 4 stacks, stays for 75 turns, then drains
+    if stack == 4:
+        # 4 stacks start at turn = 26 + 25*3 = 101
+        stack_start = 26 + 25*3
+        if turn > stack_start + 75:
+            # Draining: stacks decrease every 25 turns
+            drain_turns = turn - (stack_start + 75)
+            stack = max(0, 4 - (drain_turns // 25) - 1)
+    return stack * 14
+
 def get_available_actions(game_state, snake):
     board_width = game_state['board']['width']
     board_height = game_state['board']['height']
@@ -154,37 +172,59 @@ def flood_fill(start, game_state, max_tiles=50): # checks if we are trapped or n
 def evaluate_position(head, game_state):
     my_id = game_state['you']['id']
     score = 0
+    snakes = game_state['board']['snakes']
+
+    hazards = set()
+    if 'hazards' in game_state['board']:
+        for h in game_state['board']['hazards']:
+            hazards.add((h['x'], h['y']))
+
+    health = game_state['you']['health']
+    if health < 30:
+        score -= (30 - health) * 10  # low health penalty
+
+    if (head['x'], head['y']) in hazards:
+        damage = get_hazard_damage(game_state.get('turn', 0))
+        score -= (200 + damage * 5) * 100/health  # strong penalty
+
     food = game_state['board']['food']
     if food:
         min_dist = min(manhattan_dist(head, f) for f in food)
-        score += 100 / (min_dist + 1)  # Reward closer food
-        
-    opponents = [s for s in game_state['board']['snakes'] if s['id'] != my_id]
+        score += (500 / (min_dist + 1)) * 100/health  # Reward closer food
+
+    opponents = [s for s in snakes if s['id'] != my_id]
     my_length = len(game_state['you']['body'])
     for opp in opponents:
         opp_head = opp['body'][0]
         dist = manhattan_dist(head, opp_head)
 
         if my_length > len(opp['body']):
-            score += 100 / (dist + 1)  # stronger hunting
-        elif my_length < len(opp['body']):
-            score -= 150 / (dist + 1)  # stronger fear
+            score += 100 / (dist + 1)  
         else:
-            score -= 80 / (dist + 1)   # avoid equal fights
-          
-    score += game_state['you']['health']  # Reward higher health
-    score += my_length * 10  # Reward longer length
-    
-    num_snakes = len(game_state['board']['snakes']) # Fewer opponents is better, outlive them
-    score += (10 - num_snakes) * 200
-    
+            score -= 500 / (dist + 1) 
+
+    health = game_state['you']['health']
+    score += health * 3  # Reward higher health
+
+    score += my_length * 50  # Reward longer length
+
+    num_snakes = len(snakes) # Fewer opponents is better, outlive them
+    max_snakes = max(len(game_state['board']['snakes']), 2)  # Assume at least 2 snakes at start
+    score += (max_snakes - num_snakes) * 200
+
     safe_moves = len(get_available_actions(game_state, game_state['you'])) # More safe moves means more options and less chance of getting trapped
-    score += safe_moves * 50
-    
+    score += safe_moves * 100
+
     space = flood_fill(head, game_state) # More space means less chance of getting trapped, and more room to maneuver
-    score += space * 3
-    
-    return score
+    if space < len(game_state['you']['body'])/2:
+        score -= 5000  # almost certain death soon
+    elif space < len(game_state['you']['body']):
+        print(f"Warning: Only {space} spaces available for a snake of length {len(game_state['you']['body'])}")
+        score -= 1000  # possible death soon
+    else:
+        score += space * 50
+
+    return score/100  # scale down to keep values manageable
 
 
 # info is called when you create your Battlesnake on play.battlesnake.com
@@ -281,20 +321,20 @@ def move(game_state: typing.Dict) -> typing.Dict:
     # Step 4 : Choose to move towards food or to box in opponent
     my_id = game_state['you']['id']
     
-    food = game_state['board']['food']
-    if food:
-        # Move towards food
-        best_moves = get_best_moves_towards(safe_moves, my_head, food)
-        next_move = random.choice(best_moves)
-    else:
-        # Try to box in another snake
-        opponents = [s for s in game_state['board']['snakes'] if s['id'] != my_id]
-        if opponents:
-            opponent_heads = [snake['body'][0] for snake in opponents]
-            best_moves = get_best_moves_towards(safe_moves, my_head, opponent_heads)
-            next_move = random.choice(best_moves)
-        else:
-            next_move = random.choice(safe_moves)
+    # food = game_state['board']['food']
+    # if food:
+    #     # Move towards food
+    #     best_moves = get_best_moves_towards(safe_moves, my_head, food)
+    #     next_move = random.choice(best_moves)
+    # else:
+    #     # Try to box in another snake
+    #     opponents = [s for s in game_state['board']['snakes'] if s['id'] != my_id]
+    #     if opponents:
+    #         opponent_heads = [snake['body'][0] for snake in opponents]
+    #         best_moves = get_best_moves_towards(safe_moves, my_head, opponent_heads)
+    #         next_move = random.choice(best_moves)
+    #     else:
+    #         next_move = random.choice(safe_moves)
 
     # Use heuristic evaluation to choose the best safe move
     best_score = -float('inf')
@@ -315,6 +355,8 @@ def move(game_state: typing.Dict) -> typing.Dict:
         score = evaluate_position(new_head, temp_game_state)
         if score > best_score:
             best_score = score
+            best_move = move
+        elif score == best_score and random.random() < 0.5:  # Tie-breaker
             best_move = move
     next_move = best_move
 
@@ -348,22 +390,28 @@ def make_mcts_move(game_state: typing.Dict) -> str:
 
     deadline = time.time() + 850 / 1000.0
     
-    node = root
     while time.time() < deadline:
         node = root
-        node : MCTSNode
-        while not node.is_terminal() and not node.is_dead_end() and node.is_fully_expanded():
-            node = node.best_child()
+        # Selection: descend the tree using best_child until a node is not fully expanded or is terminal
+        while not node.is_terminal() and not node.is_dead_end():
+            if not node.is_fully_expanded():
+                # Expansion: expand one of the untried actions
+                node = node.expand()
+                break
+            else:
+                node = node.best_child()
 
-        if not node.is_terminal() and not node.is_dead_end() and not node.is_fully_expanded():
-            node = node.expand()
-
+        # Simulation and Backpropagation
         winner, amaf_actions = node.rollout()
         node.backpropagate(winner, amaf_actions)
 
     if root.children:
         best_child = max(root.children, key=lambda c: c.nodeVisits)
-
+        # best_child = max(root.children, key=lambda c: c.wins / c.nodeVisits if c.nodeVisits > 0 else float('-inf'))
+        for c in root.children:
+            print("\n")
+            print(f"Move: {c.action}, Visits: {c.nodeVisits}, Wins: {c.wins}, Winrate: {c.wins / c.nodeVisits if c.nodeVisits > 0 else 0:.2f}")
+        print(f"Selected move: {best_child.action}")
     else:
         safe = MCTSNode(game_state, None, None).available_actions
         return {"move": random.choice(safe) if safe else "up"}
@@ -384,4 +432,5 @@ def make_mcts_move(game_state: typing.Dict) -> str:
 if __name__ == "__main__":
     from server import run_server
 
+    # run_server({"info": info, "start": start, "move": move, "end": end})
     run_server({"info": info, "start": start, "move": make_mcts_move, "end": end})
