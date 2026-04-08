@@ -4,6 +4,42 @@ import random
 import typing
 from collections import defaultdict
 
+
+def fast_copy_game_state(game_state):
+    my_id = game_state['you']['id']
+
+    new_snakes = []
+    new_you = None
+
+    for s in game_state['board']['snakes']:
+        new_s = {
+            'id': s['id'],
+            'health': s['health'],
+            'body': [dict(b) for b in s['body']]
+        }
+        new_snakes.append(new_s)
+
+        if s['id'] == my_id:
+            new_you = new_s  # link to same object
+
+    new_state = {
+        'board': {
+            'width': game_state['board']['width'],
+            'height': game_state['board']['height'],
+            'snakes': new_snakes,
+            'food': [dict(f) for f in game_state['board']['food']],
+        },
+        'you': new_you,  # ✅ correct reference
+        'turn': game_state.get('turn', 0)
+    }
+
+    if 'hazards' in game_state['board']:
+        new_state['board']['hazards'] = [
+            dict(h) for h in game_state['board']['hazards']
+        ]
+
+    return new_state
+
 class MCTSNode:
 	def __init__(self, game_state, parent, action, policy='heuristic', score_method='ucb1'):
 		self.game_state = game_state
@@ -232,7 +268,7 @@ class MCTSNode:
 			return None
 
 		action = self.available_actions.pop()
-		new_game_state = deepcopy(self.game_state)
+		new_game_state = fast_copy_game_state(self.game_state)
 		my_id = self.game_state['you']['id']
 		turn = new_game_state.get('turn', 0)
 
@@ -373,9 +409,9 @@ class MCTSNode:
 
 	def rollout(self):
 		depth = 0
-		max_depth = 100
+		max_depth = 40 # or a differen value, not to big since looking far ahead is not very useful in this game, and it will also make the simulations slower
 
-		current_state = deepcopy(self.game_state)
+		current_state = fast_copy_game_state(self.game_state)
 		my_id = self.game_state['you']['id']
 		turn = current_state.get('turn', 0)
 		survived = 0
@@ -400,9 +436,9 @@ class MCTSNode:
 						for move in moves:
 							new_head = self.get_new_head(my_head, move)
 							# Simulate the move
-							temp_snake = deepcopy(snake)
+							temp_game_state = fast_copy_game_state(current_state)
+							temp_snake = next(s for s in temp_game_state['board']['snakes'] if s['id'] == my_id)
 							temp_snake['body'] = [new_head] + temp_snake['body']
-							temp_game_state = deepcopy(current_state)
 							# Replace our snake in temp_game_state
 							for idx, s in enumerate(temp_game_state['board']['snakes']):
 								if s['id'] == my_id:

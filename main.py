@@ -17,6 +17,41 @@ import time
 
 from MCTSNode import MCTSNode
 
+def fast_copy_game_state(game_state):
+    my_id = game_state['you']['id']
+
+    new_snakes = []
+    new_you = None
+
+    for s in game_state['board']['snakes']:
+        new_s = {
+            'id': s['id'],
+            'health': s['health'],
+            'body': [dict(b) for b in s['body']]
+        }
+        new_snakes.append(new_s)
+
+        if s['id'] == my_id:
+            new_you = new_s  # link to same object
+
+    new_state = {
+        'board': {
+            'width': game_state['board']['width'],
+            'height': game_state['board']['height'],
+            'snakes': new_snakes,
+            'food': [dict(f) for f in game_state['board']['food']],
+        },
+        'you': new_you,  # ✅ correct reference
+        'turn': game_state.get('turn', 0)
+    }
+
+    if 'hazards' in game_state['board']:
+        new_state['board']['hazards'] = [
+            dict(h) for h in game_state['board']['hazards']
+        ]
+
+    return new_state
+
 
 def get_new_head(head, move):
     new_head = head.copy()
@@ -268,9 +303,9 @@ def move(game_state: typing.Dict) -> typing.Dict:
     for move in safe_moves:
         new_head = get_new_head(my_head, move)
         # Simulate the move
-        temp_snake = deepcopy(snake)
+        temp_game_state = fast_copy_game_state(game_state)
+        temp_snake = next(s for s in temp_game_state['board']['snakes'] if s['id'] == my_id)
         temp_snake['body'] = [new_head] + temp_snake['body']
-        temp_game_state = deepcopy(game_state)
         # Replace our snake in temp_game_state
         for idx, s in enumerate(temp_game_state['board']['snakes']):
             if s['id'] == my_id:
@@ -309,7 +344,7 @@ def make_mcts_move(game_state: typing.Dict) -> str:
     # print([c.ucb1_score() for c in node.children])
     
     # TODO: Implement MCTS logic here to select the best move based on simulations
-    root = MCTSNode(deepcopy(game_state), None, None, policy='heuristic', score_method="ucb1_tuned")
+    root = MCTSNode(fast_copy_game_state(game_state), None, None, policy='heuristic', score_method="ucb1_tuned")
 
     deadline = time.time() + 850 / 1000.0
     
