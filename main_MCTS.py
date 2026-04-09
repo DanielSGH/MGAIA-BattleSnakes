@@ -213,14 +213,11 @@ class MCTSNode:
 		visited = dict()
 		# Each stack entry: (x, y, steps_from_head)
 		stack = [(start['x'], start['y'], 0)]
-		count = 0
-		while stack and count < max_tiles:
+		while stack and len(visited) < max_tiles:
 			x, y, steps = stack.pop()
 			if (x, y) in visited:
 				if visited[(x, y)] <= steps:
 					continue
-				else:
-					count -= 1
 
 			# Out of bounds
 			if not (0 <= x < self.board_width and 0 <= y < self.board_height):
@@ -237,7 +234,6 @@ class MCTSNode:
 				continue
 
 			visited[(x, y)] = steps
-			count += 1
 
 			# Add neighbors
 			stack.extend([
@@ -245,14 +241,86 @@ class MCTSNode:
 				(x, y+1, steps+1), (x, y-1, steps+1)
 			])
 
-		return count, visited
+		return len(visited), visited
 
-	def flood_dist(self, visited, target):
-		return visited[(target['x'], target['y'])] if (target['x'], target['y']) in visited else float('inf')
+	def flood_dist(self, head, visited, target):
+		return visited[(target['x'], target['y'])] if (target['x'], target['y']) in visited else self.manhattan_dist(head, target)
+ 
+	# def flood_fill(self, start, game_state, max_tiles=100):
+	# 	"""
+	# 	Tail-aware flood fill: allows us our snake to step onto its own body segments that will have moved by the time the fill reaches them.
+	# 	"""
+	# 	my_id = game_state['you']['id']
+	# 	my_snake = next((s for s in game_state['board']['snakes'] if s['id'] == my_id), None)
+	# 	if not my_snake:
+	# 		return 0, set()  # No snake, no space
+	# 	my_body = my_snake['body']
+	# 	# Map body segment positions to their index (distance from head)
+	# 	body_pos_to_idx = {(b['x'], b['y']): idx for idx, b in enumerate(my_body)}
+
+	# 	# Build set of all other occupied tiles (other snakes and own head excluded)
+	# 	occupied = set()
+	# 	for s in game_state['board']['snakes']:
+	# 		if s['id'] == my_id:
+	# 			# Only add own body except head (handled by logic below)
+	# 			for b in s['body'][1:]:
+	# 				occupied.add((b['x'], b['y']))
+	# 		else:
+	# 			for b in s['body']:
+	# 				occupied.add((b['x'], b['y']))
+
+	# 	visited = set()
+	# 	# Each stack entry: (x, y, steps_from_head)
+	# 	stack = [(start['x'], start['y'], 0)]
+	# 	count = 0
+	# 	while stack and count < max_tiles:
+	# 		x, y, steps = stack.pop()
+	# 		if (x, y, steps) in visited:
+	# 			continue
+
+	# 		# Out of bounds
+	# 		if not (0 <= x < game_state['board']['width'] and 0 <= y < game_state['board']['height']):
+	# 			continue
+
+	# 		# Check if occupied by own body
+	# 		if (x, y) in body_pos_to_idx:
+	# 			idx = body_pos_to_idx[(x, y)]
+	# 			# Can only step on own body if steps >= idx (tail will have moved)
+	# 			if steps < idx:
+	# 				continue
+	# 		# Check if occupied by other snakes
+	# 		elif (x, y) in occupied:
+	# 			continue
+
+	# 		visited.add((x, y, steps))
+	# 		count += 1
+
+	# 		# Add neighbors
+	# 		stack.extend([
+	# 			(x+1, y, steps+1), (x-1, y, steps+1),
+	# 			(x, y+1, steps+1), (x, y-1, steps+1)
+	# 		])
+
+	# 	return count, visited
+
+	
+
+	# def flood_dist(self, head, visited, target):
+	# 	dist = float('inf')
+	# 	for vx, vy, steps in visited:
+	# 		if (vx, vy) == (target['x'], target['y']):
+	# 			if steps < dist:
+	# 				dist = steps
+	# 	if dist == float('inf'):
+	# 		dist = self.manhattan_dist(head, target)
+	# 	return dist
+
+	def manhattan_dist(self, a, b):
+		return abs(a['x'] - b['x']) + abs(a['y'] - b['y'])
 
 	def evaluate_position(self, head, game_state):
 		my_id = game_state['you']['id']
-		score = 0
+		score = 1000
 		snakes = game_state['board']['snakes']
 		max_tiles = self.board_width * self.board_height
 		space, visited = self.flood_fill(head, game_state, max_tiles) # More space means less chance of getting trapped, and more room to maneuver
@@ -263,38 +331,46 @@ class MCTSNode:
 				hazards.add((h['x'], h['y']))
    
 		health = game_state['you']['health']
-		if health <= 0:
-			return -3  # Immediate death
-		score -= 50 * (100/max(health, 1))
+		# if health <= 0:
+		# # 	# print(f"Warning: Evaluating position with health {health} <= 0  at turn {game_state.get('turn', 0)} will cause death!")
+		# 	return -2  # Immediate death
+		# more important in later turns
+		score += (10+game_state.get('turn', 0)) * (health/ 100)
       
 		food = game_state['board']['food']
 		min_dist = 0
 		if food:
-			min_dist = min(min(self.flood_dist(visited, f) for f in food), 0)
-			score += (500 / (min_dist + 1)) * (200/max(health, 1))  # Reward closer food
-   
-		if (head['x'], head['y']) in hazards:
+			min_dist = min(min(self.flood_dist(head, visited, f) for f in food), 0)
+			score += (500 / (min_dist + 1)) * (200/max(health + 1, 1))  # Reward closer food
+
+		if head in food:
+			score += 500  # Bonus for being on food
+  
+		elif (head['x'], head['y']) in hazards:
 			damage = self.get_hazard_damage(game_state.get('turn', 0))
 			if health-damage <= 0:
-				return -3  # Immediate death
+			# 	# print(f"Warning: Moving into hazard with health {health} and damage {damage} at turn {game_state.get('turn', 0)} will cause death!")
+				return -2  # Immediate death
 			score -= 300 + 40 * 100/(max(health-damage, 1))  # strong penalty
-			# score += 10 * (health-damage-min_dist)
+			score += 30 * (health-damage-min_dist-5)
+		else:
+			score += 50 * game_state.get('turn', 0)
    
 		opponents = [s for s in snakes if s['id'] != my_id]
 		my_length = len(game_state['you']['body'])
 		for opp in opponents:
 			opp_head = opp['body'][0]
-			dist = self.flood_dist(visited, opp_head)
+			dist = self.flood_dist(head, visited, opp_head)
 
 			if my_length > len(opp['body']):
-				score += 200 / (max(dist**2, 1))
+				score += 200 / (max(dist**2 + 1, 1))
 			else:
-				score -= 1500 / (max(dist**2, 1))
+				score -= 1500 / (max(dist**2 +1, 1))
 
 		health = game_state['you']['health']
 		score += health * 3  # Reward higher health
    
-		score += my_length * 50  # Reward longer length
+		score += my_length * 100  # Reward longer length
 
 		num_snakes = len(snakes) # Fewer opponents is better, outlive them
 		score += (self.max_snakes - num_snakes) * 200
@@ -302,6 +378,7 @@ class MCTSNode:
 		safe_moves = len(self.get_available_actions(game_state, game_state['you'])) # More safe moves means more options and less chance of getting trapped
 		score += safe_moves * 500
 		if safe_moves == 0:
+		# 	# print(f"Warning: No safe moves available at turn {game_state.get('turn', 0)}!")
 			return -3  # Immediate death
 		if space <5:
 			print(f"Warning: Only {space} spaces available for a snake of length {len(game_state['you']['body'])}")
@@ -482,11 +559,12 @@ class MCTSNode:
 		turn = current_state.get('turn', 0)
 		survived = 0
 		amaf_actions = []  # Track all actions taken by our agent
+		# print(f"Starting rollout with policy {self.action} at turn {turn}")
 		while depth < max_depth:
 			snakes = current_state['board']['snakes']
 			if not any(s['id'] == my_id for s in snakes):
 				# Return both result and actions for AMAF
-				return -3, amaf_actions  # Lost
+				return -2, amaf_actions  # Lost
 
 			survived += 1
 			# Move all snakes randomly
@@ -525,6 +603,7 @@ class MCTSNode:
 								best_move = move
 						if best_move is None:
 							best_move = random.choice(moves)
+						# print(f"Rollout heuristic chose move {best_move} with score {best_score:.4f} at depth {depth} at turn {current_state.get('turn', 0)}")
 						moves_dict[snake['id']] = best_move
 						amaf_actions.append(best_move)
 					else:
@@ -554,7 +633,7 @@ class MCTSNode:
 			snakes = current_state['board']['snakes']
 			if not any(s['id'] == my_id for s in snakes):
 				# Return both result and actions for AMAF
-				return -3, amaf_actions  # Lost
+				return -2, amaf_actions  # Lost
 
 			depth += 1
 		# Reward: survived max_depth
@@ -586,8 +665,8 @@ def end(game_state: typing.Dict):
 
 def make_mcts_move(game_state: typing.Dict) -> str:
     root = MCTSNode(fast_copy_game_state(game_state), None, None, policy='heuristic', score_method="ucb1")
-
-    deadline = time.time() + 490 / 1000.0
+    start_time = time.time()
+    deadline = start_time + 490 / 1000.0
     
     while time.time() < deadline:
         node = root
@@ -610,7 +689,7 @@ def make_mcts_move(game_state: typing.Dict) -> str:
         for c in root.children:
             print("\n")
             print(f"Move: {c.action}, Visits: {c.nodeVisits}, Wins: {c.wins}, Winrate: {c.wins / c.nodeVisits if c.nodeVisits > 0 else 0:.2f}")
-        print(f"Selected move: {best_child.action} on turn {game_state['turn']}")
+        print(f"Selected move: {best_child.action} on turn {game_state['turn']} after {time.time() - start_time:.2f} seconds")
     else:
         safe = MCTSNode(game_state, None, None).available_actions
         return {"move": random.choice(safe) if safe else "up"}
