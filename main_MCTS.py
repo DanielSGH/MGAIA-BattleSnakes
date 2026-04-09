@@ -246,81 +246,12 @@ class MCTSNode:
 	def flood_dist(self, head, visited, target):
 		return visited[(target['x'], target['y'])] if (target['x'], target['y']) in visited else self.manhattan_dist(head, target)
  
-	# def flood_fill(self, start, game_state, max_tiles=100):
-	# 	"""
-	# 	Tail-aware flood fill: allows us our snake to step onto its own body segments that will have moved by the time the fill reaches them.
-	# 	"""
-	# 	my_id = game_state['you']['id']
-	# 	my_snake = next((s for s in game_state['board']['snakes'] if s['id'] == my_id), None)
-	# 	if not my_snake:
-	# 		return 0, set()  # No snake, no space
-	# 	my_body = my_snake['body']
-	# 	# Map body segment positions to their index (distance from head)
-	# 	body_pos_to_idx = {(b['x'], b['y']): idx for idx, b in enumerate(my_body)}
-
-	# 	# Build set of all other occupied tiles (other snakes and own head excluded)
-	# 	occupied = set()
-	# 	for s in game_state['board']['snakes']:
-	# 		if s['id'] == my_id:
-	# 			# Only add own body except head (handled by logic below)
-	# 			for b in s['body'][1:]:
-	# 				occupied.add((b['x'], b['y']))
-	# 		else:
-	# 			for b in s['body']:
-	# 				occupied.add((b['x'], b['y']))
-
-	# 	visited = set()
-	# 	# Each stack entry: (x, y, steps_from_head)
-	# 	stack = [(start['x'], start['y'], 0)]
-	# 	count = 0
-	# 	while stack and count < max_tiles:
-	# 		x, y, steps = stack.pop()
-	# 		if (x, y, steps) in visited:
-	# 			continue
-
-	# 		# Out of bounds
-	# 		if not (0 <= x < game_state['board']['width'] and 0 <= y < game_state['board']['height']):
-	# 			continue
-
-	# 		# Check if occupied by own body
-	# 		if (x, y) in body_pos_to_idx:
-	# 			idx = body_pos_to_idx[(x, y)]
-	# 			# Can only step on own body if steps >= idx (tail will have moved)
-	# 			if steps < idx:
-	# 				continue
-	# 		# Check if occupied by other snakes
-	# 		elif (x, y) in occupied:
-	# 			continue
-
-	# 		visited.add((x, y, steps))
-	# 		count += 1
-
-	# 		# Add neighbors
-	# 		stack.extend([
-	# 			(x+1, y, steps+1), (x-1, y, steps+1),
-	# 			(x, y+1, steps+1), (x, y-1, steps+1)
-	# 		])
-
-	# 	return count, visited
-
-	
-
-	# def flood_dist(self, head, visited, target):
-	# 	dist = float('inf')
-	# 	for vx, vy, steps in visited:
-	# 		if (vx, vy) == (target['x'], target['y']):
-	# 			if steps < dist:
-	# 				dist = steps
-	# 	if dist == float('inf'):
-	# 		dist = self.manhattan_dist(head, target)
-	# 	return dist
-
 	def manhattan_dist(self, a, b):
 		return abs(a['x'] - b['x']) + abs(a['y'] - b['y'])
 
 	def evaluate_position(self, head, game_state):
 		my_id = game_state['you']['id']
-		score = 1000
+		score = 0
 		snakes = game_state['board']['snakes']
 		max_tiles = self.board_width * self.board_height
 		space, visited = self.flood_fill(head, game_state, max_tiles) # More space means less chance of getting trapped, and more room to maneuver
@@ -331,9 +262,9 @@ class MCTSNode:
 				hazards.add((h['x'], h['y']))
    
 		health = game_state['you']['health']
-		# if health <= 0:
-		# # 	# print(f"Warning: Evaluating position with health {health} <= 0  at turn {game_state.get('turn', 0)} will cause death!")
-		# 	return -2  # Immediate death
+		if health <= 0:
+		# 	# print(f"Warning: Evaluating position with health {health} <= 0  at turn {game_state.get('turn', 0)} will cause death!")
+			return -1  # Immediate death
 		# more important in later turns
 		score += (10+game_state.get('turn', 0)) * (health/ 100)
       
@@ -348,9 +279,9 @@ class MCTSNode:
   
 		elif (head['x'], head['y']) in hazards:
 			damage = self.get_hazard_damage(game_state.get('turn', 0))
-			if health-damage <= 0:
-			# 	# print(f"Warning: Moving into hazard with health {health} and damage {damage} at turn {game_state.get('turn', 0)} will cause death!")
-				return -2  # Immediate death
+			# if health-damage <= 0:
+			# # 	# print(f"Warning: Moving into hazard with health {health} and damage {damage} at turn {game_state.get('turn', 0)} will cause death!")
+			# 	return -1  # Immediate death
 			score -= 300 + 40 * 100/(max(health-damage, 1))  # strong penalty
 			score += 30 * (health-damage-min_dist-5)
 		else:
@@ -379,22 +310,23 @@ class MCTSNode:
 		score += safe_moves * 500
 		if safe_moves == 0:
 		# 	# print(f"Warning: No safe moves available at turn {game_state.get('turn', 0)}!")
-			return -3  # Immediate death
-		if space <5:
-			print(f"Warning: Only {space} spaces available for a snake of length {len(game_state['you']['body'])}")
+			return -1  # Immediate death
+		# if space <5:
+			# print(f"Warning: Only {space} spaces available for a snake of length {len(game_state['you']['body'])}")
 		if space < len(game_state['you']['body'])/2:
-			print(f"Warning: Only {space} spaces available for a snake of length {len(game_state['you']['body'])}")
+			# print(f"Warning: Only {space} spaces available for a snake of length {len(game_state['you']['body'])}")
 			score -= 5000  # almost certain death soon
 		elif space < len(game_state['you']['body']):
-			print(f"Warning: Only {space} spaces available for a snake of length {len(game_state['you']['body'])}")
+			# print(f"Warning: Only {space} spaces available for a snake of length {len(game_state['you']['body'])}")
 			score -= 500  # possible death soon
 		else:
 			score -= (1-(max_tiles/(space+1))) * 500
-
-		score = score / 5000  # scaling
+		score = score / 10000  # scaling
 		# score = score + 100  # shift to make positive
 		# score = score / 100  # scale to keep close to [-1, 1]
-		score = min(max(score, -1), 1)  # clamp to [-1, 1]
+		score = min(max(score, -1), 2)  # clamp to [-1, 1]
+		if score == 0:
+			print("Score is 0")
 		return score
 
 	def is_fully_expanded(self):
@@ -541,8 +473,7 @@ class MCTSNode:
 		if amaf_actions is not None:
 			for action in amaf_actions:
 				self.amaf_visits[action] += 1
-				if result != 0:
-					self.amaf_wins[action] += result
+				self.amaf_wins[action] += result
 		# Standard win update
 		self.wins += result
 		self.wins_sq += result * result
@@ -557,16 +488,16 @@ class MCTSNode:
 		current_state = fast_copy_game_state(self.game_state)
 		my_id = self.game_state['you']['id']
 		turn = current_state.get('turn', 0)
-		survived = 0
 		amaf_actions = []  # Track all actions taken by our agent
 		# print(f"Starting rollout with policy {self.action} at turn {turn}")
 		while depth < max_depth:
 			snakes = current_state['board']['snakes']
 			if not any(s['id'] == my_id for s in snakes):
 				# Return both result and actions for AMAF
-				return -2, amaf_actions  # Lost
+				if -1 + depth / max_depth ==0:
+					print(f"Warning: Lost with a score of 0 at depth {depth} before rollout.")
+				return -1 + depth / max_depth, amaf_actions  # Lost
 
-			survived += 1
 			# Move all snakes randomly
 			moves_dict = {}
 			for snake in snakes:
@@ -594,7 +525,7 @@ class MCTSNode:
 									temp_game_state['board']['snakes'][idx] = temp_snake
 									break
 							temp_game_state['you'] = temp_snake
-							# temp_game_state = self.resolve_collisions(temp_game_state, turn + depth)
+							temp_game_state = self.resolve_collisions(temp_game_state, turn + depth)
 							score = self.evaluate_position(new_head, temp_game_state)
 							if score > best_score:
 								best_score = score
@@ -633,12 +564,18 @@ class MCTSNode:
 			snakes = current_state['board']['snakes']
 			if not any(s['id'] == my_id for s in snakes):
 				# Return both result and actions for AMAF
-				return -2, amaf_actions  # Lost
+				if -1 + depth / max_depth ==0:
+					print(f"Warning: Lost with a score of 0 at depth {depth} during rollout.")
+					# You can add more debug info here if needed
+				return -1 + depth / max_depth, amaf_actions  # Lost
 
 			depth += 1
 		# Reward: survived max_depth
 		final_score = self.evaluate_position(current_state['you']['body'][0], current_state)
-		return final_score, amaf_actions
+		if final_score + (depth / max_depth) == 0:
+			print(f"Warning: Final score is 0 after rollout, with final score: {final_score:.4f} and survived {depth} turns out of {max_depth}.")
+			# You can add more debug info here if needed
+		return final_score + (depth / max_depth), amaf_actions
 
 # info is called when you create your Battlesnake on play.battlesnake.com
 # and controls your Battlesnake's appearance
