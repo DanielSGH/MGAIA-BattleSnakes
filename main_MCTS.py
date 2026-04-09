@@ -663,8 +663,9 @@ def start(game_state: typing.Dict):
 def end(game_state: typing.Dict):
     print("GAME OVER\n")
 
-def make_mcts_move(game_state: typing.Dict) -> str:
-    root = MCTSNode(fast_copy_game_state(game_state), None, None, policy='heuristic', score_method="ucb1")
+def make_mcts_move(game_state: typing.Dict, policy: str, score_method: str) -> str:
+    root = MCTSNode(fast_copy_game_state(game_state), None, None, policy=policy, score_method=score_method)
+
     start_time = time.time()
     deadline = start_time + 490 / 1000.0
     
@@ -699,6 +700,22 @@ def make_mcts_move(game_state: typing.Dict) -> str:
 
 # Start server when `python main.py` is run
 if __name__ == "__main__":
-    from server import run_server
+	from server import run_server
+	import argparse
 
-    run_server({"info": info, "start": start, "move": make_mcts_move, "end": end})
+	parser = argparse.ArgumentParser(description='Configure MCTS parameters')
+	parser.add_argument('--policy',
+											choices=['random', 'heuristic'],
+											default='heuristic',
+											help='Rollout policy to use during simulations'
+	)
+	parser.add_argument('--score-method',
+										 choices=['ucb1', 'ucb1_tuned', 'rave'],
+										 default='ucb1',
+										 help='Tree policy method for selecting child nodes'
+	)
+
+	args = parser.parse_args()
+
+	print(f"Running main_MCTS with policy={args.policy} and score_method={args.score_method}")
+	run_server({"info": info, "start": start, "move": lambda game_state: make_mcts_move(game_state, args.policy, args.score_method), "end": end})
