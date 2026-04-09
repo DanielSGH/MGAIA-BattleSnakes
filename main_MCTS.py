@@ -194,7 +194,7 @@ class MCTSNode:
 		my_id = game_state['you']['id']
 		my_snake = next((s for s in game_state['board']['snakes'] if s['id'] == my_id), None)
 		if not my_snake:
-			return 0, dict()  # No snake, no space
+			return 0, set()  # No snake, no space
 		my_body = my_snake['body']
 		# Map body segment positions to their index (distance from head)
 		body_pos_to_idx = {(b['x'], b['y']): idx for idx, b in enumerate(my_body)}
@@ -210,20 +210,18 @@ class MCTSNode:
 				for b in s['body']:
 					occupied.add((b['x'], b['y']))
 
-		visited = dict()
+		visited = set()
 		# Each stack entry: (x, y, steps_from_head)
 		stack = [(start['x'], start['y'], 0)]
 		count = 0
 		while stack and count < max_tiles:
 			x, y, steps = stack.pop()
-			if (x, y) in visited:
+			if (x, y, steps) in visited:
 				if visited[(x, y)] <= steps:
 					continue
-				else:
-					count -= 1
 
 			# Out of bounds
-			if not (0 <= x < self.board_width and 0 <= y < self.board_height):
+			if not (0 <= x < game_state['board']['width'] and 0 <= y < game_state['board']['height']):
 				continue
 
 			# Check if occupied by own body
@@ -236,7 +234,7 @@ class MCTSNode:
 			elif (x, y) in occupied:
 				continue
 
-			visited[(x, y)] = steps
+			visited.add((x, y, steps))
 			count += 1
 
 			# Add neighbors
@@ -248,13 +246,16 @@ class MCTSNode:
 		return count, visited
 
 	def flood_dist(self, visited, target):
-		return visited[(target['x'], target['y'])] if (target['x'], target['y']) in visited else float('inf')
+		for vx, vy, steps in visited:
+			if (vx, vy) == (target['x'], target['y']):
+				return steps
+			return float('inf')
 
 	def evaluate_position(self, head, game_state):
 		my_id = game_state['you']['id']
 		score = 0
 		snakes = game_state['board']['snakes']
-		max_tiles = self.board_width * self.board_height
+		max_tiles = game_state['board']['width'] * self.game_state['board']['height']
 		space, visited = self.flood_fill(head, game_state, max_tiles) # More space means less chance of getting trapped, and more room to maneuver
 		   
 		hazards = set()
@@ -263,23 +264,19 @@ class MCTSNode:
 				hazards.add((h['x'], h['y']))
    
 		health = game_state['you']['health']
-		if health <= 0:
-			return -3  # Immediate death
-		score -= 50 * (100/max(health, 1))
-      
-		food = game_state['board']['food']
-		min_dist = 0
-		if food:
-			min_dist = min(min(self.flood_dist(visited, f) for f in food), 0)
-			score += (500 / (min_dist + 1)) * (200/max(health, 1))  # Reward closer food
-   
+		score -= 50 * (100/(health+1))
+		
 		if (head['x'], head['y']) in hazards:
 			damage = self.get_hazard_damage(game_state.get('turn', 0))
 			if health-damage <= 0:
 				return -3  # Immediate death
 			score -= 300 + 40 * 100/(max(health-damage, 1))  # strong penalty
-			# score += 10 * (health-damage-min_dist)
-   
+
+		food = game_state['board']['food']
+		if food:
+			min_dist = min(self.flood_dist(visited, f) for f in food)
+			score += (500 / (min_dist + 1)) * (200 / health + 1)
+
 		opponents = [s for s in snakes if s['id'] != my_id]
 		my_length = len(game_state['you']['body'])
 		for opp in opponents:
