@@ -271,7 +271,7 @@ class MCTSNode:
 		food = game_state['board']['food']
 		min_dist = 0
 		if food:
-			min_dist = min(min(self.flood_dist(head, visited, f) for f in food), 0)
+			min_dist = min(self.flood_dist(head, visited, f) for f in food)
 			score += (500 / (min_dist + 1)) * (200/max(health + 1, 1))  # Reward closer food
 
 		if head in food:
