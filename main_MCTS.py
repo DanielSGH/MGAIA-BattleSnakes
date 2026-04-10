@@ -30,7 +30,7 @@ def fast_copy_game_state(game_state):
             'snakes': new_snakes,
             'food': [dict(f) for f in game_state['board']['food']],
         },
-        'you': new_you,  # ✅ correct reference
+        'you': new_you,
         'turn': game_state.get('turn', 0)
     }
 
@@ -564,18 +564,18 @@ class MCTSNode:
 			snakes = current_state['board']['snakes']
 			if not any(s['id'] == my_id for s in snakes):
 				# Return both result and actions for AMAF
-				if -1 + depth / max_depth ==0:
+				if -1 + 0.9 * (depth / max_depth) ==0:
 					print(f"Warning: Lost with a score of 0 at depth {depth} during rollout.")
 					# You can add more debug info here if needed
-				return -1 + depth / max_depth, amaf_actions  # Lost
+				return -1 + 0.9 * (depth / max_depth), amaf_actions  # Lost
 
 			depth += 1
 		# Reward: survived max_depth
 		final_score = self.evaluate_position(current_state['you']['body'][0], current_state)
-		if final_score + (depth / max_depth) == 0:
+		if final_score + 0.9 * (depth / max_depth) == 0:
 			print(f"Warning: Final score is 0 after rollout, with final score: {final_score:.4f} and survived {depth} turns out of {max_depth}.")
 			# You can add more debug info here if needed
-		return final_score + (depth / max_depth), amaf_actions
+		return final_score + 0.9 * (depth / max_depth), amaf_actions
 
 # info is called when you create your Battlesnake on play.battlesnake.com
 # and controls your Battlesnake's appearance
@@ -647,7 +647,7 @@ if __name__ == "__main__":
 											help='Rollout policy to use during simulations'
 	)
 	parser.add_argument('--score-method',
-										 choices=['ucb1', 'ucb1_tuned', 'rave'],
+										 choices=['ucb1', 'ucb1_tuned', 'rave', 'grave'],
 										 default='ucb1',
 										 help='Tree policy method for selecting child nodes'
 	)
